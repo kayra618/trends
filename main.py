@@ -12,9 +12,9 @@ diller=["TR","DE","IT","KR","NL","DK"]
 
 güncelle=st.sidebar.button("haberleri güncelle")
 
-if güncelle:
-    for dil in diller:
-        trendgetir(dil)
+
+for dil in diller:
+    trendgetir(dil)
     
 
 ara = st.text_input("Haber İçinde Arama Yap")
