@@ -19,6 +19,9 @@ else:
 
 haberler = c.fetchall()
 
+if len(haberler)==0:
+    st.warning(f"  {ara} sourgusu ile ilgili herhangi bir haber bulunamadı")
+
 for i in range(0, len(haberler), 3):
     col1, col2, col3 = st.columns(3)
     with col1:
