@@ -16,6 +16,8 @@ if guncelle:
     for dil in diller:
         trendgetir(dil)
 
+dilsecimi=st.multiselect("ülke seç",diller)
+
 ara=st.text_input("Haber İçinde Arama Yap")
 
 conn=sqlitecloud.connect('sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0')
