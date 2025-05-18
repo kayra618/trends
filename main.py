@@ -12,8 +12,9 @@ diller=["TR","DE","IT","KR","NL","DK"]
 
 güncelle=st.sidebar.button("haberleri güncelle")
 
-for dil in diller:
-    trendgetir(dil)
+if güncelle:
+    for dil in diller:
+        trendgetir(dil)
     
 
 ara = st.text_input("Haber İçinde Arama Yap")
@@ -29,7 +30,7 @@ else:
 haberler = c.fetchall()
 
 if len(haberler)==0:
-    st.warning(f"  {ara} sourgusu ile ilgili herhangi bir haber bulunamadı")
+    st.warning(f"  {ara} sorgusu ile ilgili herhangi bir haber bulunamadı")
 
 for i in range(0, len(haberler), 3):
     col1, col2, col3 = st.columns(3)
