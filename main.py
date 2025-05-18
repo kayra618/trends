@@ -6,7 +6,7 @@ import requests
 from datetime import date
 from google import genai
 from pydantic import BaseModel
-from fonksiyonlar import trendgetir
+from fonksiyolar import trendgetir
 
 diller=["TR","DE","IT","KR","FR","NL","DK"]
 
