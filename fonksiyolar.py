@@ -3,13 +3,17 @@ import xml.etree.ElementTree as et
 import sqlitecloud
 import requests
 from datetime import date
-from google import genai
+from google import generativeai as genai
 from pydantic import BaseModel
 
+# Google Gemini API anahtarı burada tanımlı
+GENAI_API_KEY = "YOUR_API_KEY_HERE"
+genai.configure(api_key=GENAI_API_KEY)
+
+DB_URL = "sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0"
+
 def trendgetir(ulke="TR"):
-    conn = sqlitecloud.connect(
-        'sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0'
-    )
+    conn = sqlitecloud.connect(DB_URL)
     c = conn.cursor()
 
     c.execute("CREATE TABLE IF NOT EXISTS trendler(isim TEXT,trafik INT,tarih TEXT,dil TEXT,isimtr TEXT)")
@@ -18,14 +22,12 @@ def trendgetir(ulke="TR"):
     c.execute("CREATE TABLE IF NOT EXISTS haberler(trend_id INT,baslik TEXT,link TEXT UNIQUE,resim TEXT,kaynak TEXT,basliktr TEXT)")
     conn.commit()
 
-    r = requests.get(f'https://trends.google.com/trending/rss?geo={ulke}')
-    veri = r.text
-    haberler = et.fromstring(veri)
-    haberler = haberler[0]
+    r = requests.get(f'https://trends.google.com/trendingsearches/daily/rss?geo={ulke}')
+    haberler = et.fromstring(r.text)[0]
 
     for i in haberler.findall('item'):
         title = i.find('title').text
-        trafik = int(i[1].text.replace("+", ""))
+        trafik = int(i[1].text.replace("+", "").replace(",", ""))
         tarih = str(date.today())
 
         c.execute("SELECT rowid FROM trendler WHERE isim=? AND tarih=? AND dil=?", (title, tarih, ulke))
@@ -51,53 +53,40 @@ def trendgetir(ulke="TR"):
 def geminicevir(basliklar):
     class Ceviri(BaseModel):
         ceviri: list[str]
-    prompt = str(basliklar) + "--->bu konuları veya haberler başlıklarını türkçeye çevir"
-    client = genai.Client(api_key="AIzaSyALuc_PAmFOK34wChTvnq6D3v3uknZtL4A")
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config={
-            "response_mime_type": "application/json",
-            "response_schema": Ceviri,
-        },
-    )
-    ceviri: Ceviri = response.parsed.ceviri
-    return ceviri
+
+    prompt = str(basliklar) + " ---> Bu haber başlıklarını Türkçeye çevir. Sadece çevirileri JSON listesi olarak ver."
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    response = model.generate_content(prompt)
+    
+    try:
+        ceviriler = eval(response.text)
+    except:
+        ceviriler = [b for b in basliklar]  # fallback
+    
+    return ceviriler
 
 def trendcevir(limit=15):
-    conn = sqlitecloud.connect(
-        'sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0'
-    )
+    conn = sqlitecloud.connect(DB_URL)
     c = conn.cursor()
 
     c.execute("SELECT rowid,* FROM trendler WHERE isimtr IS NULL OR isimtr='' ")
     veri = c.fetchall()
 
-    idler = []
-    basliklar = []
-    basliklartr = []
-
-    haberidler = []
-    haberbasliklar = []
-    haberbasliklartr = []
+    idler, basliklar = [], []
+    haberidler, haberbasliklar = [], []
 
     for i in veri:
         if i[4] != "TR":
             idler.append(i[0])
             basliklar.append(i[1])
-
             c.execute("SELECT rowid,* FROM haberler WHERE trend_id=? AND basliktr IS NULL ", (i[0],))
             veri2 = c.fetchall()
-
             for j in veri2:
                 haberidler.append(j[0])
                 haberbasliklar.append(j[1])
 
-    idler = idler[:limit]
-    basliklar = basliklar[:limit]
-
-    haberidler = haberidler[:limit]
-    haberbasliklar = haberbasliklar[:limit]
+    idler, basliklar = idler[:limit], basliklar[:limit]
+    haberidler, haberbasliklar = haberidler[:limit], haberbasliklar[:limit]
 
     basliklartr = geminicevir(basliklar)
     haberbasliklartr = geminicevir(haberbasliklar)
@@ -110,62 +99,46 @@ def trendcevir(limit=15):
         c.execute("UPDATE haberler SET basliktr=? WHERE rowid=?", (haberbasliklartr[i], haberidler[i]))
         conn.commit()
 
-    print(haberidler, haberbasliklar)
     conn.close()
-    return veri
 
 def habercevir(haber_id):
-    conn = sqlitecloud.connect(
-        'sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0'
-    )
+    conn = sqlitecloud.connect(DB_URL)
     c = conn.cursor()
 
     c.execute("SELECT basliktr,baslik FROM haberler WHERE rowid=?", (haber_id,))
     veri = c.fetchone()
 
     if veri[0] is None:
-        import google.generativeai as genai
-        genai.configure(api_key="AIzaSyALuc_PAmFOK34wChTvnq6D3v3uknZtL4A")
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(f" {veri[1]} ---> metni türkçeye çevir sadece çeviriyi yaz")
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(f"{veri[1]} ---> metni Türkçeye çevir sadece çeviriyi yaz")
         c.execute("UPDATE haberler SET basliktr=? WHERE rowid=?", (response.text, haber_id))
         conn.commit()
+        conn.close()
+        return response.text
     else:
         conn.close()
         return veri[0]
 
-    conn.close()
-    return response.text
-
 def gununozeti(gun="", ulke_kodu="TR"):
-    conn = sqlitecloud.connect(
-        'sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0'
-    )
+    conn = sqlitecloud.connect(DB_URL)
     c = conn.cursor()
-    if gun == "":
-        bugun = str(date.today())
-        c.execute("SELECT rowid,* FROM trendler WHERE tarih=? AND dil=?", (bugun, ulke_kodu))
-        trendler = c.fetchall()
-    else:
-        c.execute("SELECT rowid,* FROM trendler WHERE tarih=? AND dil=?", (gun, ulke_kodu))
-        trendler = c.fetchall()
+    tarih = gun if gun else str(date.today())
+    c.execute("SELECT rowid,* FROM trendler WHERE tarih=? AND dil=?", (tarih, ulke_kodu))
+    trendler = c.fetchall()
 
     haberlist = []
     for i in trendler:
         c.execute("SELECT h.* FROM trendler INNER JOIN haberler h ON h.trend_id=trendler.rowid WHERE trendler.rowid=?", (i[0],))
         haberler = c.fetchall()
-        for x in haberler:
-            haberlist.append(x[1])
+        haberlist += [x[1] for x in haberler]
 
-    import google.generativeai as genai
-    genai.configure(api_key="AIzaSyALuc_PAmFOK34wChTvnq6D3v3uknZtL4A")
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content(f" {str(haberlist)} ---> bu günün haberlerini incele ve bu haberlere ait bir türkçe günün özeti çıkar")
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    response = model.generate_content(f"{str(haberlist)} ---> Bu günün haberlerine göre bir Türkçe özet çıkar.")
     conn.close()
     return response.text
 
-# --------- Streamlit Arayüzü ile Ülke Seçimi ve Gösterim ---------
-st.title("Google Trends (Ülke Seçimi ile)")
+# ---------------- Streamlit Arayüzü ----------------
+st.title(" Google Trends (Ülke Bazlı)")
 
 ulke_kodlari = {
     "Türkiye": "TR",
@@ -179,24 +152,22 @@ ulke_kodlari = {
 secilen_ulke = st.selectbox("Ülke seçiniz", options=list(ulke_kodlari.keys()))
 ulke_kodu = ulke_kodlari[secilen_ulke]
 
-if st.button("Trendleri Getir"):
+if st.button(" Trendleri Getir"):
     trendgetir(ulke=ulke_kodu)
-    st.success(f"{secilen_ulke} için trendler çekildi!")
+    trendcevir()
+    st.success(f"{secilen_ulke} için trendler çekildi ve çevrildi!")
 
     # Trendleri ve haberleri göster
-    conn = sqlitecloud.connect(
-        'sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0'
-    )
+    conn = sqlitecloud.connect(DB_URL)
     c = conn.cursor()
     bugun = str(date.today())
-    c.execute("SELECT rowid, isim FROM trendler WHERE tarih=? AND dil=?", (bugun, ulke_kodu))
+    c.execute("SELECT rowid, isim, isimtr FROM trendler WHERE tarih=? AND dil=?", (bugun, ulke_kodu))
     trendler = c.fetchall()
 
-    st.subheader(f"{secilen_ulke} için Bugünün Trendleri")
+    st.subheader(f" {secilen_ulke} İçin Bugünün Trendleri")
     for trend in trendler:
-        st.markdown(f"**{trend[1]}**")
-        # Haberi göster
-        c.execute("SELECT baslik, link FROM haberler WHERE trend_id=?", (trend[0],))
+        st.markdown(f"### {trend[2] or trend[1]}")
+        c.execute("SELECT basliktr, link FROM haberler WHERE trend_id=?", (trend[0],))
         haberler = c.fetchall()
         if haberler:
             for haber in haberler:
@@ -204,3 +175,8 @@ if st.button("Trendleri Getir"):
         else:
             st.markdown("- Bu trend için haber bulunamadı.")
     conn.close()
+
+if st.button(" Günün Özeti"):
+    ozet = gununozeti(ulke_kodu=ulke_kodu)
+    st.subheader(" Günün Özeti:")
+    st.markdown(ozet)
