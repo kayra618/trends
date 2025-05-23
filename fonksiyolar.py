@@ -17,7 +17,6 @@ def trendgetir(ulke="TR"):
     c.execute("CREATE TABLE IF NOT EXISTS haberler(trend_id INT,baslik TEXT,link TEXT UNIQUE,resim TEXT,kaynak TEXT,basliktr TEXT)")
     conn.commit()
 
-
     r=requests.get(f'https://trends.google.com/trending/rss?geo={ulke}')
     veri=r.text
     haberler=et.fromstring(veri)
@@ -36,14 +35,12 @@ def trendgetir(ulke="TR"):
             conn.commit()
         else:
             c.execute("SELECT rowid FROM trendler WHERE isim=? AND tarih=?",(title,tarih))
-
             deger=c.fetchone()
             if deger==None:
                 id=0
             else:
                 id=deger[0]
             conn.commit()
-
 
         for m in i:
             if "news_item" in m.tag:
@@ -59,7 +56,6 @@ def geminicevir(basliklar):
     class Ceviri(BaseModel):
         ceviri: list[str]
 
-
     prompt=str(basliklar)+"--->bu konuları veya haberler başlıklarını türkçeye çevir"
 
     client = genai.Client(api_key="AIzaSyALuc_PAmFOK34wChTvnq6D3v3uknZtL4A")
@@ -71,14 +67,8 @@ def geminicevir(basliklar):
             "response_schema": Ceviri,
         },
     )
-    # Use the response as a JSON string.
-    #print(response.text)
-
-    # Use instantiated objects.
     ceviri: Ceviri = response.parsed.ceviri
-
     return ceviri
-
 
 def trendcevir(limit=15):
     conn=sqlitecloud.connect('sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0')
@@ -116,8 +106,6 @@ def trendcevir(limit=15):
     basliklartr=geminicevir(basliklar)
     haberbasliklartr=geminicevir(haberbasliklar)
 
-
-
     for i in range(len(idler)):
         c.execute("UPDATE trendler SET isimtr=? WHERE rowid=?",(basliklartr[i],idler[i]))
         conn.commit()
@@ -129,7 +117,6 @@ def trendcevir(limit=15):
     print(haberidler,haberbasliklar)
 
     return veri
-
 
 def habercevir(haber_id):
     conn=sqlitecloud.connect('sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0')
@@ -153,7 +140,6 @@ def habercevir(haber_id):
 
     return response.text
 
-
 def gununozeti(gun=""):
     conn=sqlitecloud.connect('sqlitecloud://cwcgjb0ahz.g1.sqlite.cloud:8860/chinook.sqlite?apikey=DaG8uyqMPa9GdxoR7ObMoajHIdfUOrc7B0mF0IrU6Y0')
 
@@ -166,7 +152,6 @@ def gununozeti(gun=""):
     else:
         c.execute("SELECT rowid,* FROM trendler WHERE tarih=?",(gun,))
         trendler=c.fetchall()
-
 
     haberlist=[]
     for i in trendler:
@@ -185,3 +170,23 @@ def gununozeti(gun=""):
     model = genai.GenerativeModel("gemini-2.0-flash")
     response = model.generate_content(f" {str(haberlist)} ---> bu günün haberlerini incele ve bu haberlere ait bir türkçe günün özeti çıkar")
     return response.text
+
+# --------- Streamlit Arayüzü ile Ülke Seçimi ---------
+st.title("Google Trends (Ülke Seçimi ile)")
+
+ulke_kodlari = {
+    "Türkiye": "TR",
+    "ABD": "US",
+    "Almanya": "DE",
+    "Fransa": "FR",
+    "İngiltere": "GB",
+    "Japonya": "JP"
+    # Listeyi ihtiyacına göre genişletebilirsin
+}
+
+secilen_ulke = st.selectbox("Ülke seçiniz", options=list(ulke_kodlari.keys()))
+ulke_kodu = ulke_kodlari[secilen_ulke]
+
+if st.button("Trendleri Getir"):
+    trendgetir(ulke=ulke_kodu)
+    st.success(f"{secilen_ulke} için trendler çekildi!")
